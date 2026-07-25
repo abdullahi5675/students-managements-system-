@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Result Management System</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="app">
+        <!-- Login View -->
+        <div id="login-view" class="view active">
+            <div class="auth-page">
+                <div class="auth-visual">
+                    <div class="visual-content">
+                        <div class="logo-placeholder">🎓</div>
+                        <h1>S R M S</h1>
+                        <p>Streamlining Academic Excellence</p>
+                    </div>
+                </div>
+                <div class="auth-form-container">
+                    <div class="login-box">
+                        <h2>Welcome Back</h2>
+                        <p class="subtitle">Please login to your account</p>
+                        <form id="login-form">
+                            <div class="input-group">
+                                <label for="username">Email / Reg Number</label>
+                                <input type="text" id="username" required placeholder="Email or Registration Number">
+                            </div>
+                            <div class="input-group">
+                                <label for="password">Password</label>
+                                <div class="password-wrapper">
+                                    <input type="password" id="password" required placeholder="Enter your password">
+                                    <button type="button" class="eye-toggle" onclick="togglePassword('password', this)">👁️</button>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn primary-btn">Login</button>
+                            <p id="login-error" class="error-msg"></p>
+                        </form>
+                        <div class="auth-switch">
+                            <p>Are you a student?</p>
+                            <button type="button" class="btn outline-btn" style="margin-top: 10px;" onclick="switchAuthView('register')">Create Student Account</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Student Registration View -->
+        <div id="register-view" class="view">
+            <div class="auth-page reverse-layout">
+                <div class="auth-visual">
+                    <div class="visual-content">
+                        <div class="logo-placeholder">🚀</div>
+                        <h1>Join SRMS</h1>
+                        <p>Your gateway to academic success</p>
+                    </div>
+                </div>
+                <div class="auth-form-container">
+                    <div class="login-box register-box">
+                        <h2>Student Registration</h2>
+                        <p class="subtitle">Create your academic account</p>
+                        <form id="register-form">
+                            <div class="input-row">
+                                <div class="input-group">
+                                    <label for="reg_fullname">Full Name</label>
+                                    <input type="text" id="reg_fullname" required placeholder="Letters only" oninput="this.value=this.value.replace(/[^a-zA-Z\\s]/g, '')">
+                                </div>
+                                <div class="input-group">
+                                    <label for="reg_email">Email Address</label>
+                                    <input type="email" id="reg_email" required placeholder="student@example.com">
+                                </div>
+                            </div>
+                            <div class="input-row">
+                                <div class="input-group">
+                                    <label for="reg_number">Registration Number</label>
+                                    <input type="text" id="reg_number" required placeholder="e.g. SIT/SWE/23/0001">
+                                </div>
+                                <div class="input-group">
+                                    <label for="reg_dept">Department</label>
+                                    <input type="text" id="reg_dept" required placeholder="e.g. Software Engineering">
+                                </div>
+                            </div>
+                            <div class="input-group">
+                                <label for="reg_level">Level</label>
+                                <select id="reg_level" required class="input">
+                                    <option value="">Select Level</option>
+                                    <option value="100">100 Level</option>
+                                    <option value="200">200 Level</option>
+                                    <option value="300">300 Level</option>
+                                    <option value="400">400 Level</option>
+                                    <option value="500">500 Level</option>
+                                </select>
+                            </div>
+                            <div class="input-group">
+                                <label for="reg_password">Strong Password</label>
+                                <div class="password-wrapper">
+                                    <input type="password" id="reg_password" required placeholder="Min 8 chars, 1 letter, 1 number, 1 special">
+                                    <button type="button" class="eye-toggle" onclick="togglePassword('reg_password', this)">👁️</button>
+                                </div>
+                                <p id="password-strength-msg" style="font-size: 0.8rem; margin-top: 5px;"></p>
+                            </div>
+                            <button type="submit" class="btn primary-btn">Create Account</button>
+                            <p id="register-msg" class="error-msg"></p>
+                        </form>
+                        <div class="auth-switch">
+                            <p>Already have an account?</p>
+                            <button type="button" class="btn outline-btn" style="margin-top: 10px;" onclick="switchAuthView('login')">Log In to Existing Account</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dashboard View -->
+        <div id="dashboard-view" class="view dashboard-layout">
+            <aside class="sidebar" id="sidebar">
+                <div class="sidebar-header">
+                    <div class="nav-brand">SRMS</div>
+                    <button class="close-sidebar-btn" onclick="toggleSidebar()">✖</button>
+                </div>
+                <nav class="sidebar-nav" id="sidebar-nav">
+                    <!-- Links injected via JS based on Role -->
+                </nav>
+                <div class="sidebar-footer">
+                    <div class="sidebar-user">
+                        <div class="sidebar-avatar" id="sidebar-avatar">A</div>
+                        <div class="sidebar-user-info">
+                            <span id="user-greeting" class="sidebar-user-name"></span>
+                            <span class="sidebar-user-role" id="sidebar-user-role"></span>
+                        </div>
+                    </div>
+                    <button id="logout-btn" class="sidebar-logout-btn">
+                        <span>⏏</span> Logout
+                    </button>
+                </div>
+            </aside>
+            <div class="main-wrapper">
+                <header class="topbar">
+                    <div class="topbar-left">
+                        <button id="mobile-menu-btn" class="menu-btn" onclick="toggleSidebar()">☰</button>
+                        <span class="topbar-title" id="topbar-title">Dashboard</span>
+                    </div>
+                    <div class="topbar-right">
+                        <span class="topbar-greeting" id="topbar-greeting"></span>
+                    </div>
+                </header>
+                <main class="dashboard-content" id="dashboard-content">
+                    <!-- Content injected via JS based on Role -->
+                </main>
+            </div>
+        </div>
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>
