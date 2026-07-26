@@ -1,4 +1,9 @@
-const API_URL = 'http://localhost:5000/api';
+const getApiUrl = () => {
+    const hostname = (window.location.hostname && window.location.hostname !== '') ? window.location.hostname : 'localhost';
+    const protocol = window.location.protocol.startsWith('http') ? window.location.protocol : 'http:';
+    return `${protocol}//${hostname}:5000/api`;
+};
+const API_URL = getApiUrl();
 
 const loginView = document.getElementById('login-view');
 const dashboardView = document.getElementById('dashboard-view');
