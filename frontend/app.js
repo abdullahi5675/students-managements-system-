@@ -890,6 +890,9 @@ async function renderAdminCourses() {
         const allocations = await allocRes.json();
         
         const lecturers = users.filter(u => u.role_name === 'Lecturer');
+        window.currentAdminCourses = courses;
+        
+        const uniqueDepartments = Array.from(new Set(courses.map(c => c.department).filter(Boolean))).sort();
         
         let html = `
             <div class="form-section">
@@ -946,12 +949,34 @@ async function renderAdminCourses() {
 
             <div class="form-section" style="background: #f8fafc; border: 1px dashed var(--border);">
                 <h3 class="section-title">👨‍🏫 Assign Course to Lecturer</h3>
+                
+                <div class="input-row" style="margin-bottom: 1.2rem; background: #ffffff; padding: 1rem 1.2rem; border-radius: var(--radius-md); border: 1px solid var(--border);">
+                    <div class="input-group" style="margin-bottom:0;">
+                        <label for="filter_alloc_dept" style="font-weight:600; font-size:0.8rem; color:var(--text-muted);">FILTER BY DEPARTMENT</label>
+                        <select id="filter_alloc_dept" onchange="filterAllocatableCourses()">
+                            <option value="">-- All Departments (${uniqueDepartments.length}) --</option>
+                            ${uniqueDepartments.map(d => `<option value="${d}">${d}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="input-group" style="margin-bottom:0;">
+                        <label for="filter_alloc_level" style="font-weight:600; font-size:0.8rem; color:var(--text-muted);">FILTER BY LEVEL</label>
+                        <select id="filter_alloc_level" onchange="filterAllocatableCourses()">
+                            <option value="">-- All Levels --</option>
+                            <option value="100">100 Level</option>
+                            <option value="200">200 Level</option>
+                            <option value="300">300 Level</option>
+                            <option value="400">400 Level</option>
+                            <option value="500">500 Level</option>
+                        </select>
+                    </div>
+                </div>
+
                 <form id="allocate-course-form">
                     <div class="input-row">
                         <div class="input-group">
                             <label for="alloc_course">Select Course <span style="color:var(--error)">*</span></label>
                             <select id="alloc_course" required>
-                                <option value="">-- Choose Course --</option>
+                                <option value="">-- Choose Course (${courses.length} available) --</option>
                                 ${courses.map(c => `<option value="${c.id}">${c.course_code} - ${c.title} (${c.level}L - ${c.department})</option>`).join('')}
                             </select>
                         </div>
@@ -1093,6 +1118,22 @@ async function renderAdminCourses() {
         container.innerHTML = '<p class="error-msg">Failed to load courses view.</p>';
     }
 }
+
+window.filterAllocatableCourses = function() {
+    const deptFilter = (document.getElementById('filter_alloc_dept')?.value || '').trim().toLowerCase();
+    const levelFilter = document.getElementById('filter_alloc_level')?.value || '';
+    const courseSelect = document.getElementById('alloc_course');
+    if (!courseSelect || !window.currentAdminCourses) return;
+
+    const filtered = window.currentAdminCourses.filter(c => {
+        const matchDept = !deptFilter || (c.department || '').trim().toLowerCase() === deptFilter;
+        const matchLevel = !levelFilter || String(c.level) === levelFilter;
+        return matchDept && matchLevel;
+    });
+
+    courseSelect.innerHTML = `<option value="">-- Choose Course (${filtered.length} available) --</option>` +
+        filtered.map(c => `<option value="${c.id}">${c.course_code} - ${c.title} (${c.level}L - ${c.department})</option>`).join('');
+};
 
 window.deleteCourse = async function(id) {
     if (!confirm("Are you sure you want to delete this course? This action cannot be undone.")) return;
