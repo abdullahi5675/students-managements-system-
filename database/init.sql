@@ -13,6 +13,8 @@ CREATE TABLE users (
     role_id INT REFERENCES roles(id) ON DELETE RESTRICT,
     full_name VARCHAR(255) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
+    department VARCHAR(255),
+    faculty VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -22,7 +24,9 @@ CREATE TABLE courses (
     title VARCHAR(255) NOT NULL,
     credit_units INT NOT NULL,
     department VARCHAR(100) NOT NULL,
-    semester INT NOT NULL
+    faculty VARCHAR(255),
+    semester INT NOT NULL,
+    level INT DEFAULT 100
 );
 
 CREATE TABLE students (
@@ -37,7 +41,18 @@ CREATE TABLE course_allocations (
     id SERIAL PRIMARY KEY,
     lecturer_id INT REFERENCES users(id) ON DELETE CASCADE,
     course_id INT REFERENCES courses(id) ON DELETE CASCADE,
-    UNIQUE(lecturer_id, course_id)
+    session VARCHAR(20) DEFAULT '2025/2026',
+    UNIQUE(lecturer_id, course_id, session)
+);
+
+CREATE TABLE course_registrations (
+    id SERIAL PRIMARY KEY,
+    student_id INT REFERENCES students(id) ON DELETE CASCADE,
+    course_id INT REFERENCES courses(id) ON DELETE CASCADE,
+    session VARCHAR(20) NOT NULL DEFAULT '2025/2026',
+    semester INT NOT NULL DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(student_id, course_id, session)
 );
 
 CREATE TABLE results (
@@ -49,6 +64,7 @@ CREATE TABLE results (
     total_score NUMERIC(5,2) DEFAULT 0,
     grade VARCHAR(2),
     status VARCHAR(20) DEFAULT 'Pending', -- Pending, Dept_Approved, Faculty_Approved
+    rejection_reason TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(student_id, course_id)

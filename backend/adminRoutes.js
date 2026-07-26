@@ -28,12 +28,18 @@ router.get('/roles', async (req, res) => {
 router.get('/users', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT u.id, u.username, u.full_name, u.email, r.name as role_name
+      SELECT u.id, u.username, u.full_name, u.email, r.name as role_name,
+             COALESCE(s.department, u.department) as department,
+             COALESCE(u.faculty, '—') as faculty,
+             s.level, s.matric_no
       FROM users u
       JOIN roles r ON u.role_id = r.id
+      LEFT JOIN students s ON u.id = s.user_id
+      ORDER BY u.id DESC
     `);
     res.json(result.rows);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -90,7 +96,7 @@ router.post('/users', async (req, res) => {
 // Get courses
 router.get('/courses', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM courses');
+    const result = await pool.query('SELECT * FROM courses ORDER BY level ASC, course_code ASC');
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
@@ -99,14 +105,15 @@ router.get('/courses', async (req, res) => {
 
 // Create Course
 router.post('/courses', async (req, res) => {
-  const { course_code, title, credit_units, department, faculty, semester } = req.body;
+  const { course_code, title, credit_units, department, faculty, semester, level } = req.body;
   try {
     await pool.query(
-      'INSERT INTO courses (course_code, title, credit_units, department, faculty, semester) VALUES ($1, $2, $3, $4, $5, $6)',
-      [course_code, title, credit_units, department, faculty, semester]
+      'INSERT INTO courses (course_code, title, credit_units, department, faculty, semester, level) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [course_code, title, credit_units, department, faculty, semester, level || 100]
     );
     res.json({ message: 'Course created successfully' });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'Failed to create course' });
   }
 });
@@ -115,11 +122,11 @@ router.post('/courses', async (req, res) => {
 router.get('/allocations', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT ca.id, ca.lecturer_id, ca.course_id, u.full_name as lecturer_name, u.email as lecturer_email, c.course_code, c.title as course_title, c.department
+      SELECT ca.id, ca.lecturer_id, ca.course_id, ca.session, u.full_name as lecturer_name, u.email as lecturer_email, c.course_code, c.title as course_title, c.department, c.level, c.semester
       FROM course_allocations ca
       JOIN users u ON ca.lecturer_id = u.id
       JOIN courses c ON ca.course_id = c.id
-      ORDER BY c.course_code ASC
+      ORDER BY ca.session DESC, c.course_code ASC
     `);
     res.json(result.rows);
   } catch (err) {
@@ -130,20 +137,21 @@ router.get('/allocations', async (req, res) => {
 
 // Allocate Course
 router.post('/allocations', async (req, res) => {
-  const { lecturer_id, course_id } = req.body;
+  const { lecturer_id, course_id, session } = req.body;
   if (!lecturer_id || !course_id) {
     return res.status(400).json({ error: 'Please select both a Lecturer and a Course.' });
   }
+  const cleanSession = (session || '2025/2026').trim();
   try {
     await pool.query(
-      'INSERT INTO course_allocations (lecturer_id, course_id) VALUES ($1, $2)',
-      [lecturer_id, course_id]
+      'INSERT INTO course_allocations (lecturer_id, course_id, session) VALUES ($1, $2, $3)',
+      [lecturer_id, course_id, cleanSession]
     );
     res.json({ message: 'Course allocated to lecturer successfully!' });
   } catch (err) {
     console.error(err);
     if (err.code === '23505') {
-      return res.status(400).json({ error: 'This course is already allocated to this lecturer.' });
+      return res.status(400).json({ error: 'This course is already allocated to this lecturer for this session.' });
     }
     res.status(500).json({ error: 'Failed to allocate course' });
   }

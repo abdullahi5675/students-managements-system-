@@ -147,41 +147,217 @@ app.post('/api/auth/register-student', async (req, res) => {
 app.use('/api/admin', authenticateToken, adminRoutes);
 
 // Lecturer: Get my assigned courses
-app.get('/api/courses/my-courses', authenticateToken, async (req, res) => {
-  if (req.user.role !== 'Lecturer') return res.status(403).json({ error: 'Unauthorized' });
+// --- STUDENT COURSE REGISTRATION ENDPOINTS ---
+
+// Student: Get courses available for registration (with carryover detection)
+app.get('/api/courses/available-for-registration', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'Student') return res.status(403).json({ error: 'Unauthorized' });
+  
+  const targetSession = (req.query.session || '2025/2026').trim();
+  const targetSemester = parseInt(req.query.semester) || 1;
+  const targetLevel = parseInt(req.query.level) || 100;
+  
   try {
-    const result = await pool.query(
-      `SELECT c.*, 
-        (SELECT rejection_reason FROM results r WHERE r.course_id = c.id AND r.status = 'Rejected' LIMIT 1) as rejection_reason,
-        (SELECT status FROM results r WHERE r.course_id = c.id LIMIT 1) as status
+    const studentRes = await pool.query('SELECT id, department, level FROM students WHERE user_id = $1', [req.user.id]);
+    if (studentRes.rows.length === 0) return res.status(404).json({ error: 'Student record not found' });
+    const student = studentRes.rows[0];
+    
+    // Fetch courses matching selected level, department, and semester
+    const coursesRes = await pool.query(
+      `SELECT c.* 
        FROM courses c 
-       JOIN course_allocations ca ON c.id = ca.course_id 
-       WHERE ca.lecturer_id = $1`,
-      [req.user.id]
+       WHERE c.semester = $1 
+         AND c.level = $2 
+         AND (LOWER(TRIM(c.department)) = LOWER(TRIM($3)) OR LOWER(TRIM(c.department)) = 'general')
+       ORDER BY c.course_code ASC`,
+      [targetSemester, targetLevel, student.department]
+    );
+    
+    // Fetch carryover courses (courses where student previously received F)
+    const carryoversRes = await pool.query(
+      `SELECT DISTINCT c.* 
+       FROM results r 
+       JOIN courses c ON r.course_id = c.id 
+       WHERE r.student_id = $1 AND r.grade = 'F' AND c.semester = $2`,
+      [student.id, targetSemester]
+    );
+    
+    // Combine courses, tagging carryovers
+    const carryoverIds = new Set(carryoversRes.rows.map(c => c.id));
+    const allAvailable = [...coursesRes.rows];
+    
+    // Append carryovers if not already present
+    carryoversRes.rows.forEach(co => {
+      if (!allAvailable.some(a => a.id === co.id)) {
+        allAvailable.push(co);
+      }
+    });
+    
+    const formattedCourses = allAvailable.map(c => ({
+      ...c,
+      is_carryover: carryoverIds.has(c.id)
+    }));
+    
+    // Fetch existing registrations for this session
+    const regRes = await pool.query(
+      `SELECT course_id FROM course_registrations WHERE student_id = $1 AND session = $2`,
+      [student.id, targetSession]
+    );
+    const registeredIds = regRes.rows.map(r => r.course_id);
+    
+    res.json({
+      courses: formattedCourses,
+      registered_ids: registeredIds,
+      student
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch available courses' });
+  }
+});
+
+// Student: Register courses
+app.post('/api/courses/register', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'Student') return res.status(403).json({ error: 'Unauthorized' });
+  
+  const { course_ids, session, semester } = req.body;
+  if (!Array.isArray(course_ids) || course_ids.length === 0) {
+    return res.status(400).json({ error: 'Please select at least one course to register.' });
+  }
+  
+  const targetSession = (session || '2025/2026').trim();
+  const targetSemester = parseInt(semester) || 1;
+  
+  try {
+    const studentRes = await pool.query('SELECT id FROM students WHERE user_id = $1', [req.user.id]);
+    if (studentRes.rows.length === 0) return res.status(404).json({ error: 'Student record not found' });
+    const studentId = studentRes.rows[0].id;
+    
+    await pool.query('BEGIN');
+    
+    for (const courseId of course_ids) {
+      await pool.query(
+        `INSERT INTO course_registrations (student_id, course_id, session, semester) 
+         VALUES ($1, $2, $3, $4) 
+         ON CONFLICT (student_id, course_id, session) DO NOTHING`,
+        [studentId, courseId, targetSession, targetSemester]
+      );
+    }
+    
+    await auditLog(req, 'COURSE_REGISTRATION', `Registered ${course_ids.length} courses for ${targetSession}`);
+    await pool.query('COMMIT');
+    
+    res.json({ message: 'Course registration completed successfully!' });
+  } catch (err) {
+    await pool.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ error: 'Failed to register courses' });
+  }
+});
+
+// Student: Get registered courses list
+app.get('/api/courses/my-registrations', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'Student') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const studentRes = await pool.query('SELECT id FROM students WHERE user_id = $1', [req.user.id]);
+    if (studentRes.rows.length === 0) return res.status(404).json({ error: 'Student record not found' });
+    
+    const result = await pool.query(
+      `SELECT cr.id, cr.session, cr.semester, c.course_code, c.title, c.credit_units, c.department, c.level
+       FROM course_registrations cr
+       JOIN courses c ON cr.course_id = c.id
+       WHERE cr.student_id = $1
+       ORDER BY cr.session DESC, cr.semester ASC, c.course_code ASC`,
+      [studentRes.rows[0].id]
     );
     res.json(result.rows);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Lecturer: Get students for a specific course
-app.get('/api/courses/:id/students', authenticateToken, async (req, res) => {
+// Lecturer: Get allocated courses filtered by session/semester/level
+app.get('/api/courses/my-courses', authenticateToken, async (req, res) => {
   if (req.user.role !== 'Lecturer') return res.status(403).json({ error: 'Unauthorized' });
+  
+  const { session, semester, level } = req.query;
+  
   try {
-    // Basic implementation: fetch all students who have this course registered or just all students for now.
-    // Since there's no course registration table yet, we'll fetch all students in the department of the course, or just all students.
-    // For simplicity of this MVP, let's fetch ALL students. In a real system, you'd join with a course_registration table.
-    const result = await pool.query(
-      `SELECT s.id as student_id, u.full_name, u.username as matric_no, 
-              r.ca_score, r.exam_score, r.status
-       FROM students s 
-       JOIN users u ON s.user_id = u.id
-       LEFT JOIN results r ON s.id = r.student_id AND r.course_id = $1`,
-       [req.params.id]
-    );
+    let query = `SELECT c.*, ca.session,
+                        (SELECT rejection_reason FROM results r WHERE r.course_id = c.id AND r.status = 'Rejected' LIMIT 1) as rejection_reason,
+                        (SELECT status FROM results r WHERE r.course_id = c.id LIMIT 1) as status
+                 FROM courses c 
+                 JOIN course_allocations ca ON c.id = ca.course_id 
+                 WHERE ca.lecturer_id = $1 `;
+    const params = [req.user.id];
+    
+    if (session) {
+      params.push(session.trim());
+      query += ` AND ca.session = $${params.length} `;
+    }
+    if (semester) {
+      params.push(parseInt(semester));
+      query += ` AND c.semester = $${params.length} `;
+    }
+    if (level) {
+      params.push(parseInt(level));
+      query += ` AND c.level = $${params.length} `;
+    }
+    
+    query += ` ORDER BY c.course_code ASC`;
+    
+    const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Lecturer: Get registered students for a specific course & session
+app.get('/api/courses/:id/students', authenticateToken, async (req, res) => {
+  if (req.user.role !== 'Lecturer') return res.status(403).json({ error: 'Unauthorized' });
+  
+  const courseId = req.params.id;
+  const session = (req.query.session || '2025/2026').trim();
+  
+  try {
+    // Primary query: Fetch students who officially registered for this course
+    let result = await pool.query(
+      `SELECT s.id as student_id, u.full_name, s.matric_no, s.level, s.department,
+              r.ca_score, r.exam_score, r.status
+       FROM course_registrations cr
+       JOIN students s ON cr.student_id = s.id
+       JOIN users u ON s.user_id = u.id
+       LEFT JOIN results r ON s.id = r.student_id AND r.course_id = $1
+       WHERE cr.course_id = $1 AND cr.session = $2
+       ORDER BY s.matric_no ASC`,
+      [courseId, session]
+    );
+    
+    // Fallback: If no student registered yet for this session, fetch students in course's department so lecturer can grade
+    if (result.rows.length === 0) {
+      const courseRes = await pool.query('SELECT department, level FROM courses WHERE id = $1', [courseId]);
+      if (courseRes.rows.length > 0) {
+        const courseDept = courseRes.rows[0].department;
+        const courseLvl = courseRes.rows[0].level;
+        result = await pool.query(
+          `SELECT s.id as student_id, u.full_name, s.matric_no, s.level, s.department,
+                  r.ca_score, r.exam_score, r.status
+           FROM students s
+           JOIN users u ON s.user_id = u.id
+           LEFT JOIN results r ON s.id = r.student_id AND r.course_id = $1
+           WHERE LOWER(TRIM(s.department)) = LOWER(TRIM($2)) AND s.level = $3
+           ORDER BY s.matric_no ASC`,
+          [courseId, courseDept, courseLvl]
+        );
+      }
+    }
+    
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -192,7 +368,7 @@ app.post('/api/results/upload', authenticateToken, async (req, res) => {
     return res.status(403).json({ error: 'Unauthorized to upload results' });
   }
   
-  const { results, course_id } = req.body; // results is array of { student_id, ca_score, exam_score }
+  const { results, course_id } = req.body;
   
   try {
     await pool.query('BEGIN');
@@ -239,9 +415,10 @@ app.get('/api/results/pending', authenticateToken, async (req, res) => {
   const userDept = (req.user.department || '').trim();
   const userFac = (req.user.faculty || '').trim();
   
+  const { session, semester } = req.query;
+  
   try {
-    // Primary query with department/faculty filter
-    let query = `SELECT r.course_id, c.course_code, c.title, c.department, c.faculty, COUNT(r.student_id) as student_count, r.status
+    let query = `SELECT r.course_id, c.course_code, c.title, c.department, c.faculty, c.level, c.semester, COUNT(r.student_id) as student_count, r.status
                  FROM results r
                  JOIN courses c ON r.course_id = c.id
                  WHERE r.status = $1 `;
@@ -249,24 +426,29 @@ app.get('/api/results/pending', authenticateToken, async (req, res) => {
     const params = [targetStatus];
     
     if (roleType === 'Department_Officer' && userDept) {
-        query += ` AND LOWER(TRIM(c.department)) = LOWER(TRIM($2)) `;
         params.push(userDept);
+        query += ` AND LOWER(TRIM(c.department)) = LOWER(TRIM($${params.length})) `;
     } else if (roleType === 'Faculty_Officer' && userFac) {
-        query += ` AND LOWER(TRIM(c.faculty)) = LOWER(TRIM($2)) `;
         params.push(userFac);
+        query += ` AND LOWER(TRIM(c.faculty)) = LOWER(TRIM($${params.length})) `;
     }
     
-    query += ` GROUP BY r.course_id, c.course_code, c.title, c.department, c.faculty, r.status`;
+    if (semester) {
+        params.push(parseInt(semester));
+        query += ` AND c.semester = $${params.length} `;
+    }
+    
+    query += ` GROUP BY r.course_id, c.course_code, c.title, c.department, c.faculty, c.level, c.semester, r.status`;
     
     let result = await pool.query(query, params);
     
-    // Fallback: If no results found with department filter, fetch all pending results for that role so nothing is missed
+    // Fallback if department filter returned 0
     if (result.rows.length === 0) {
-        const fallbackQuery = `SELECT r.course_id, c.course_code, c.title, c.department, c.faculty, COUNT(r.student_id) as student_count, r.status
+        const fallbackQuery = `SELECT r.course_id, c.course_code, c.title, c.department, c.faculty, c.level, c.semester, COUNT(r.student_id) as student_count, r.status
                                FROM results r
                                JOIN courses c ON r.course_id = c.id
                                WHERE r.status = $1
-                               GROUP BY r.course_id, c.course_code, c.title, c.department, c.faculty, r.status`;
+                               GROUP BY r.course_id, c.course_code, c.title, c.department, c.faculty, c.level, c.semester, r.status`;
         result = await pool.query(fallbackQuery, [targetStatus]);
     }
     

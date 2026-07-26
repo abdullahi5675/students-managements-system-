@@ -95,7 +95,10 @@ function renderSidebar(user) {
     let linksHTML = '';
     
     if (user.role === 'Student') {
-        linksHTML = `<button class="sidebar-link active" onclick="activateSidebarLink(this, 'My Results'); fetchStudentResults()">📊 My Results</button>`;
+        linksHTML = `
+            <button class="sidebar-link active" onclick="activateSidebarLink(this, 'My Results'); fetchStudentResults()">📊 My Results</button>
+            <button class="sidebar-link" onclick="activateSidebarLink(this, 'Course Registration'); renderStudentCourseRegistration()">📝 Register Courses</button>
+        `;
     } else if (user.role === 'Lecturer') {
         linksHTML = `<button class="sidebar-link active" onclick="activateSidebarLink(this, 'My Courses'); renderLecturerCourses()">📚 My Courses</button>`;
     } else if (user.role.includes('Officer')) {
@@ -263,6 +266,246 @@ async function fetchStudentResults() {
     }
 }
 
+window.renderStudentCourseRegistration = async function() {
+    const dashboardContent = document.getElementById('dashboard-content');
+    dashboardContent.innerHTML = `
+        <div class="card">
+            <h2>Course Registration</h2>
+            <p class="subtitle">Select your session, semester, and level to register pre-created courses or carryovers</p>
+            
+            <div style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1.5rem; background:#f8fafc; padding:1.2rem; border-radius:var(--radius-md); border:1px solid var(--border);">
+                <div style="flex:1; min-width:180px;">
+                    <label style="font-weight:600; font-size:0.85rem;">Academic Session</label>
+                    <select id="reg_session_select" class="input" style="margin-bottom:0;" onchange="loadAvailableCoursesForRegistration()">
+                        <option value="2025/2026" selected>2025/2026 Session</option>
+                        <option value="2026/2027">2026/2027 Session</option>
+                    </select>
+                </div>
+                <div style="flex:1; min-width:180px;">
+                    <label style="font-weight:600; font-size:0.85rem;">Semester</label>
+                    <select id="reg_semester_select" class="input" style="margin-bottom:0;" onchange="loadAvailableCoursesForRegistration()">
+                        <option value="1" selected>First Semester</option>
+                        <option value="2">Second Semester</option>
+                    </select>
+                </div>
+                <div style="flex:1; min-width:180px;">
+                    <label style="font-weight:600; font-size:0.85rem;">Level (Change for carryovers)</label>
+                    <select id="reg_level_select" class="input" style="margin-bottom:0;" onchange="loadAvailableCoursesForRegistration()">
+                        <option value="100">100 Level</option>
+                        <option value="200">200 Level</option>
+                        <option value="300">300 Level</option>
+                        <option value="400">400 Level</option>
+                        <option value="500">500 Level</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="registration-courses-container">
+                <p>Loading available courses...</p>
+            </div>
+            
+            <div style="margin-top:2.5rem;">
+                <h3 class="section-title">📋 Registered Courses for this Session</h3>
+                <div id="registered-courses-list">
+                    <p style="color:var(--text-muted);">Loading registrations...</p>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    loadAvailableCoursesForRegistration();
+    loadMyRegistrationsList();
+};
+
+window.loadAvailableCoursesForRegistration = async function() {
+    const container = document.getElementById('registration-courses-container');
+    if (!container) return;
+    
+    const session = document.getElementById('reg_session_select').value;
+    const semester = document.getElementById('reg_semester_select').value;
+    const level = document.getElementById('reg_level_select').value;
+    
+    container.innerHTML = '<p>Loading courses...</p>';
+    
+    try {
+        const res = await fetch(`${API_URL}/courses/available-for-registration?session=${session}&semester=${semester}&level=${level}`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('srms_token')}` }
+        });
+        const data = await res.json();
+        
+        if (!res.ok) {
+            container.innerHTML = `<p class="error-msg">${data.error || 'Failed to load courses'}</p>`;
+            return;
+        }
+        
+        const { courses, registered_ids, student } = data;
+        
+        const levelSelect = document.getElementById('reg_level_select');
+        if (levelSelect && !levelSelect.dataset.userSet) {
+            levelSelect.value = student.level;
+            levelSelect.dataset.userSet = "true";
+            loadAvailableCoursesForRegistration();
+            return;
+        }
+        
+        if (!courses || courses.length === 0) {
+            container.innerHTML = `<div style="padding:1.5rem; text-align:center; color:var(--text-muted); background:#f9fafb; border-radius:8px;">No pre-created courses found for ${level}L - ${semester == 1 ? '1st' : '2nd'} Semester in ${student.department} department.</div>`;
+            return;
+        }
+        
+        const regSet = new Set(registered_ids);
+        
+        let html = `
+            <div style="margin-bottom:1rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;">
+                <p style="margin:0; font-size:0.9rem; color:var(--text-muted);">Department: <strong>${student.department}</strong> | Selected Level: <strong>${level}L</strong></p>
+                <small style="color:var(--text-muted);">Check the courses you wish to offer and click Submit.</small>
+            </div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:40px;">Select</th>
+                            <th>Course Code</th>
+                            <th>Course Title</th>
+                            <th>Units</th>
+                            <th>Department</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${courses.map(c => {
+                            const isReg = regSet.has(c.id);
+                            return `
+                                <tr style="${c.is_carryover ? 'background: #fff1f2;' : ''}">
+                                    <td>
+                                        <input type="checkbox" class="course-reg-checkbox" value="${c.id}" ${isReg ? 'checked disabled' : ''}>
+                                    </td>
+                                    <td><strong>${c.course_code}</strong></td>
+                                    <td>${c.title}</td>
+                                    <td>${c.credit_units}</td>
+                                    <td>${c.department}</td>
+                                    <td>
+                                        ${c.is_carryover ? '<span class="status-badge status-rejected">⚠️ CARRYOVER</span>' : '<span class="status-badge" style="background:#e0e7ff; color:#3730a3;">Core</span>'}
+                                    </td>
+                                    <td>
+                                        ${isReg ? '<span class="status-badge status-approved">✅ Registered</span>' : '<span style="color:#64748b; font-size:0.85rem;">Not Registered</span>'}
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+            
+            <div style="margin-top:1.5rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+                <button class="btn primary-btn" style="width:auto; padding:0.7rem 1.8rem;" onclick="submitCourseRegistration()">✅ Submit Selected Course Registration</button>
+                <p id="reg-submit-msg" class="form-feedback" style="margin:0;"></p>
+            </div>
+        `;
+        
+        container.innerHTML = html;
+    } catch(err) {
+        container.innerHTML = '<p class="error-msg">Failed to connect to server.</p>';
+    }
+};
+
+window.submitCourseRegistration = async function() {
+    const checkboxes = document.querySelectorAll('.course-reg-checkbox:checked:not([disabled])');
+    const selectedIds = Array.from(checkboxes).map(cb => parseInt(cb.value));
+    const msgEl = document.getElementById('reg-submit-msg');
+    
+    if (selectedIds.length === 0) {
+        msgEl.style.color = 'var(--error)';
+        msgEl.textContent = 'Please select at least one new course to register.';
+        return;
+    }
+    
+    const session = document.getElementById('reg_session_select').value;
+    const semester = document.getElementById('reg_semester_select').value;
+    
+    msgEl.style.color = 'var(--text-muted)';
+    msgEl.textContent = 'Submitting registration...';
+    
+    try {
+        const res = await fetch(`${API_URL}/courses/register`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('srms_token')}`
+            },
+            body: JSON.stringify({
+                course_ids: selectedIds,
+                session,
+                semester
+            })
+        });
+        const data = await res.json();
+        
+        if (res.ok) {
+            msgEl.style.color = 'green';
+            msgEl.textContent = data.message;
+            loadAvailableCoursesForRegistration();
+            loadMyRegistrationsList();
+        } else {
+            msgEl.style.color = 'var(--error)';
+            msgEl.textContent = data.error || 'Failed to register courses.';
+        }
+    } catch(err) {
+        msgEl.style.color = 'var(--error)';
+        msgEl.textContent = 'Server connection failed.';
+    }
+};
+
+window.loadMyRegistrationsList = async function() {
+    const container = document.getElementById('registered-courses-list');
+    if (!container) return;
+    
+    try {
+        const res = await fetch(`${API_URL}/courses/my-registrations`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('srms_token')}` }
+        });
+        const registrations = await res.json();
+        
+        if (!registrations || registrations.length === 0) {
+            container.innerHTML = '<p style="color:var(--text-muted);">No course registrations found yet.</p>';
+            return;
+        }
+        
+        let html = `
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Session</th>
+                            <th>Semester</th>
+                            <th>Course Code</th>
+                            <th>Course Title</th>
+                            <th>Credit Units</th>
+                            <th>Level</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${registrations.map(r => `
+                            <tr>
+                                <td><strong>${r.session}</strong></td>
+                                <td>${r.semester == 1 ? '1st Semester' : '2nd Semester'}</td>
+                                <td><strong>${r.course_code}</strong></td>
+                                <td>${r.title}</td>
+                                <td>${r.credit_units}</td>
+                                <td>${r.level}L</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+        container.innerHTML = html;
+    } catch(err) {
+        container.innerHTML = '<p class="error-msg">Failed to load registration history.</p>';
+    }
+};
+
 if (loginForm) {
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -415,11 +658,11 @@ async function renderAdminUsers() {
                     <div class="officer-section" id="dept-fac-section">
                         <p class="officer-label">📌 Department & Faculty Assignment</p>
                         <div class="input-row">
-                            <div class="input-group">
+                            <div class="input-group" id="dept-input-group">
                                 <label for="new_dept">Department</label>
                                 <input type="text" id="new_dept" placeholder="e.g. Computer Science">
                             </div>
-                            <div class="input-group">
+                            <div class="input-group" id="faculty-input-group">
                                 <label for="new_faculty">Faculty</label>
                                 <input type="text" id="new_faculty" placeholder="e.g. Faculty of Science">
                             </div>
@@ -471,6 +714,22 @@ async function renderAdminUsers() {
         `;
         
         container.innerHTML = html;
+        
+        const roleSelect = document.getElementById('new_role');
+        if (roleSelect) {
+            roleSelect.addEventListener('change', (e) => {
+                const text = e.target.options[e.target.selectedIndex].text.toLowerCase();
+                const deptGrp = document.getElementById('dept-input-group');
+                if (deptGrp) {
+                    if (text.includes('faculty officer')) {
+                        deptGrp.style.display = 'none';
+                        document.getElementById('new_dept').value = '';
+                    } else {
+                        deptGrp.style.display = 'block';
+                    }
+                }
+            });
+        }
         
         const form = document.getElementById('create-user-form');
         const userMsg = document.getElementById('user-msg');
@@ -614,6 +873,16 @@ async function renderAdminCourses() {
                             <input type="number" id="c_units" placeholder="e.g. 3" min="1" max="6" required>
                         </div>
                         <div class="input-group">
+                            <label for="c_level">Target Level <span style="color:var(--error)">*</span></label>
+                            <select id="c_level" required>
+                                <option value="100">100 Level</option>
+                                <option value="200">200 Level</option>
+                                <option value="300">300 Level</option>
+                                <option value="400">400 Level</option>
+                                <option value="500">500 Level</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
                             <label for="c_sem">Semester <span style="color:var(--error)">*</span></label>
                             <select id="c_sem" required>
                                 <option value="">Select Semester</option>
@@ -645,7 +914,7 @@ async function renderAdminCourses() {
                             <label for="alloc_course">Select Course <span style="color:var(--error)">*</span></label>
                             <select id="alloc_course" required>
                                 <option value="">-- Choose Course --</option>
-                                ${courses.map(c => `<option value="${c.id}">${c.course_code} - ${c.title} (${c.department})</option>`).join('')}
+                                ${courses.map(c => `<option value="${c.id}">${c.course_code} - ${c.title} (${c.level}L - ${c.department})</option>`).join('')}
                             </select>
                         </div>
                         <div class="input-group">
@@ -654,6 +923,10 @@ async function renderAdminCourses() {
                                 <option value="">-- Choose Lecturer --</option>
                                 ${lecturers.map(l => `<option value="${l.id}">${l.full_name} (${l.username})</option>`).join('')}
                             </select>
+                        </div>
+                        <div class="input-group">
+                            <label for="alloc_session">Academic Session <span style="color:var(--error)">*</span></label>
+                            <input type="text" id="alloc_session" value="2025/2026" required placeholder="e.g. 2025/2026">
                         </div>
                     </div>
                     <button type="submit" class="btn primary-btn" style="margin-top: 0.5rem; width: auto; min-width: 200px;">🔗 Assign Course</button>
@@ -667,19 +940,23 @@ async function renderAdminCourses() {
                     <table>
                         <thead>
                             <tr>
+                                <th>Session</th>
                                 <th>Course Code</th>
                                 <th>Course Title</th>
+                                <th>Level</th>
                                 <th>Assigned Lecturer</th>
                                 <th>Department</th>
                                 <th>Action</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${allocations.length === 0 ? '<tr><td colspan="5" style="text-align:center; padding:1.5rem; color:var(--text-muted);">No courses currently allocated.</td></tr>' :
+                            ${allocations.length === 0 ? '<tr><td colspan="7" style="text-align:center; padding:1.5rem; color:var(--text-muted);">No courses currently allocated.</td></tr>' :
                             allocations.map(a => `
                                 <tr>
+                                    <td><strong>${a.session}</strong></td>
                                     <td><strong>${a.course_code}</strong></td>
                                     <td>${a.course_title}</td>
+                                    <td>${a.level || 100}L</td>
                                     <td>${a.lecturer_name} <br><small style="color:var(--text-muted);">${a.lecturer_email}</small></td>
                                     <td>${a.department || '—'}</td>
                                     <td>
@@ -696,10 +973,10 @@ async function renderAdminCourses() {
                 <h3 class="section-title">📚 All Registered Courses (${courses.length})</h3>
                 <div class="table-responsive">
                     <table>
-                        <thead><tr><th>ID</th><th>Code</th><th>Title</th><th>Units</th><th>Department</th><th>Faculty</th><th>Sem</th><th>Actions</th></tr></thead>
+                        <thead><tr><th>ID</th><th>Code</th><th>Title</th><th>Units</th><th>Level</th><th>Department</th><th>Faculty</th><th>Sem</th><th>Actions</th></tr></thead>
                         <tbody>
-                            ${courses.length === 0 ? '<tr><td colspan="8" style="text-align:center; padding:1.5rem; color:var(--text-muted);">No courses found.</td></tr>' :
-                            courses.map(c => `<tr><td>#${c.id}</td><td><strong>${c.course_code}</strong></td><td>${c.title}</td><td>${c.credit_units}</td><td>${c.department}</td><td>${c.faculty || '—'}</td><td>Sem ${c.semester}</td><td><button class="btn secondary-btn" style="padding: 4px 10px; font-size: 0.8rem; border-color: var(--error); color: var(--error); background: transparent;" onclick="deleteCourse(${c.id})">Delete</button></td></tr>`).join('')}
+                            ${courses.length === 0 ? '<tr><td colspan="9" style="text-align:center; padding:1.5rem; color:var(--text-muted);">No courses found.</td></tr>' :
+                            courses.map(c => `<tr><td>#${c.id}</td><td><strong>${c.course_code}</strong></td><td>${c.title}</td><td>${c.credit_units}</td><td>${c.level}L</td><td>${c.department}</td><td>${c.faculty || '—'}</td><td>Sem ${c.semester}</td><td><button class="btn secondary-btn" style="padding: 4px 10px; font-size: 0.8rem; border-color: var(--error); color: var(--error); background: transparent;" onclick="deleteCourse(${c.id})">Delete</button></td></tr>`).join('')}
                         </tbody>
                     </table>
                 </div>
@@ -716,6 +993,7 @@ async function renderAdminCourses() {
                 course_code: document.getElementById('c_code').value.trim(),
                 title: document.getElementById('c_title').value.trim(),
                 credit_units: document.getElementById('c_units').value,
+                level: document.getElementById('c_level').value,
                 department: document.getElementById('c_dept').value.trim(),
                 faculty: document.getElementById('c_faculty').value.trim(),
                 semester: document.getElementById('c_sem').value
@@ -748,7 +1026,8 @@ async function renderAdminCourses() {
             const allocMsg = document.getElementById('alloc-msg');
             const body = {
                 course_id: document.getElementById('alloc_course').value,
-                lecturer_id: document.getElementById('alloc_lecturer').value
+                lecturer_id: document.getElementById('alloc_lecturer').value,
+                session: document.getElementById('alloc_session').value.trim()
             };
             
             try {
@@ -828,21 +1107,61 @@ async function renderAdminLogs() {
 // --- LECTURER SPECIFIC FUNCTIONS ---
 async function renderLecturerCourses() {
     const container = document.getElementById('lecturer-dynamic-content');
+    
+    const sess = document.getElementById('lec_filter_session')?.value || '2025/2026';
+    const sem = document.getElementById('lec_filter_semester')?.value || '';
+    const lvl = document.getElementById('lec_filter_level')?.value || '';
+    
     try {
-        const res = await fetch(`${API_URL}/courses/my-courses`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('srms_token')}` }});
+        const queryParams = new URLSearchParams({ session: sess });
+        if (sem) queryParams.append('semester', sem);
+        if (lvl) queryParams.append('level', lvl);
+        
+        const res = await fetch(`${API_URL}/courses/my-courses?${queryParams.toString()}`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('srms_token')}` }});
         const courses = await res.json();
         
+        let filterBar = `
+            <div style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1.2rem; background:#f8fafc; padding:1rem; border-radius:var(--radius-md); border:1px solid var(--border);">
+                <div style="flex:1; min-width:140px;">
+                    <label style="font-size:0.8rem; font-weight:600;">Academic Session</label>
+                    <select id="lec_filter_session" class="input" style="margin-bottom:0;" onchange="renderLecturerCourses()">
+                        <option value="2025/2026" ${sess === '2025/2026' ? 'selected' : ''}>2025/2026 Session</option>
+                        <option value="2026/2027" ${sess === '2026/2027' ? 'selected' : ''}>2026/2027 Session</option>
+                    </select>
+                </div>
+                <div style="flex:1; min-width:140px;">
+                    <label style="font-size:0.8rem; font-weight:600;">Semester</label>
+                    <select id="lec_filter_semester" class="input" style="margin-bottom:0;" onchange="renderLecturerCourses()">
+                        <option value="" ${sem === '' ? 'selected' : ''}>All Semesters</option>
+                        <option value="1" ${sem === '1' ? 'selected' : ''}>1st Semester</option>
+                        <option value="2" ${sem === '2' ? 'selected' : ''}>2nd Semester</option>
+                    </select>
+                </div>
+                <div style="flex:1; min-width:140px;">
+                    <label style="font-size:0.8rem; font-weight:600;">Level</label>
+                    <select id="lec_filter_level" class="input" style="margin-bottom:0;" onchange="renderLecturerCourses()">
+                        <option value="" ${lvl === '' ? 'selected' : ''}>All Levels</option>
+                        <option value="100" ${lvl === '100' ? 'selected' : ''}>100 Level</option>
+                        <option value="200" ${lvl === '200' ? 'selected' : ''}>200 Level</option>
+                        <option value="300" ${lvl === '300' ? 'selected' : ''}>300 Level</option>
+                        <option value="400" ${lvl === '400' ? 'selected' : ''}>400 Level</option>
+                        <option value="500" ${lvl === '500' ? 'selected' : ''}>500 Level</option>
+                    </select>
+                </div>
+            </div>
+        `;
+        
         if (courses.length === 0) {
-            container.innerHTML = '<p>You have not been assigned to any courses.</p>';
+            container.innerHTML = filterBar + '<p style="color:var(--text-muted); padding:1rem; text-align:center;">No courses assigned to you for the selected filters.</p>';
             return;
         }
         
-        let html = `
-            <p>Select a course to upload results:</p>
-            <select id="lecturer_course_select" class="input-group input" onchange="loadCourseStudents(this.value)">
-                <option value="">-- Select Course --</option>
+        let html = filterBar + `
+            <label style="font-weight:600; font-size:0.9rem;">Select a course to grade registered students:</label>
+            <select id="lecturer_course_select" class="input-group input" style="margin-top:0.3rem;" onchange="loadCourseStudents(this.value)">
+                <option value="">-- Choose Assigned Course --</option>
                 ${courses.map(c => {
-                    let label = `${c.course_code} - ${c.title}`;
+                    let label = `${c.course_code} - ${c.title} (${c.level}L - Sem ${c.semester})`;
                     if (c.status === 'Rejected') label += ' [REJECTED]';
                     return `<option value="${c.id}">${label}</option>`;
                 }).join('')}
@@ -852,7 +1171,7 @@ async function renderLecturerCourses() {
         `;
         container.innerHTML = html;
         
-        window.currentLecturerCourses = courses; // Cache courses to easily fetch rejection reason
+        window.currentLecturerCourses = courses;
     } catch(err) {
         container.innerHTML = '<p class="error-msg">Failed to load your courses.</p>';
     }
@@ -867,6 +1186,8 @@ async function loadCourseStudents(courseId) {
         return;
     }
     
+    const sess = document.getElementById('lec_filter_session')?.value || '2025/2026';
+    
     // Check if rejected
     const courseObj = window.currentLecturerCourses.find(c => c.id == courseId);
     if (courseObj && courseObj.status === 'Rejected') {
@@ -877,13 +1198,13 @@ async function loadCourseStudents(courseId) {
         banner.innerHTML = '';
     }
     
-    container.innerHTML = '<p>Loading students...</p>';
+    container.innerHTML = '<p>Loading registered students...</p>';
     try {
-        const res = await fetch(`${API_URL}/courses/${courseId}/students`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('srms_token')}` }});
+        const res = await fetch(`${API_URL}/courses/${courseId}/students?session=${sess}`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('srms_token')}` }});
         const students = await res.json();
         
         if (students.length === 0) {
-            container.innerHTML = '<p>No students found for this course.</p>';
+            container.innerHTML = '<p style="color:var(--text-muted); padding:1rem; text-align:center;">No students have registered for this course yet in ' + sess + ' session.</p>';
             return;
         }
         
@@ -891,7 +1212,7 @@ async function loadCourseStudents(courseId) {
             <form id="grading-form">
                 <div class="table-responsive">
                     <table>
-                        <tr><th>Matric No</th><th>Name</th><th>CA Score (30)</th><th>Exam Score (70)</th></tr>
+                        <tr><th>Matric No</th><th>Name</th><th>Level</th><th>Department</th><th>CA Score (30)</th><th>Exam Score (70)</th></tr>
                         ${students.map((s, i) => {
                             const isApproved = s.status === 'Dept_Approved' || s.status === 'Faculty_Approved';
                             const caVal = s.ca_score !== null ? s.ca_score : '';
@@ -899,8 +1220,10 @@ async function loadCourseStudents(courseId) {
                             const disabled = isApproved ? 'disabled' : '';
                             return `
                             <tr>
-                                <td>${s.matric_no}</td>
+                                <td><strong>${s.matric_no}</strong></td>
                                 <td>${s.full_name}</td>
+                                <td>${s.level}L</td>
+                                <td>${s.department}</td>
                                 <td>
                                     <input type="hidden" name="student_id[]" value="${s.student_id}">
                                     <input type="number" name="ca_score[]" min="0" max="30" class="input-group input" style="width:80px" value="${caVal}" ${disabled}>
@@ -972,7 +1295,7 @@ async function renderOfficerPending(role) {
         const pending = await res.json();
         
         if (pending.length === 0) {
-            container.innerHTML = '<p>No pending results for approval at this level.</p>';
+            container.innerHTML = '<p style="color:var(--text-muted); padding:1rem; text-align:center;">No pending results for approval at this level.</p>';
             return;
         }
         
@@ -981,18 +1304,36 @@ async function renderOfficerPending(role) {
         let html = `
             <div class="table-responsive">
                 <table>
-                    <tr><th>Course Code</th><th>Title</th><th>Students Submitted</th><th>Current Status</th><th>Action</th></tr>
-                    ${pending.map(p => `
+                    <thead>
                         <tr>
-                            <td>${p.course_code}</td>
-                            <td>${p.title}</td>
-                            <td>${p.student_count}</td>
-                            <td>${p.status}</td>
-                            <td>
-                                <button class="btn" style="background:var(--primary); color:white; padding: 5px 10px; font-size: 0.8rem;" onclick="reviewCourse(${p.course_id}, '${nextStatus}', '${p.course_code}', '${p.title}')">Review Marks</button>
-                            </td>
+                            <th>Course Code</th>
+                            <th>Title</th>
+                            <th>Department</th>
+                            <th>Faculty</th>
+                            <th>Level</th>
+                            <th>Semester</th>
+                            <th>Students</th>
+                            <th>Current Status</th>
+                            <th>Action</th>
                         </tr>
-                    `).join('')}
+                    </thead>
+                    <tbody>
+                        ${pending.map(p => `
+                            <tr>
+                                <td><strong>${p.course_code}</strong></td>
+                                <td>${p.title}</td>
+                                <td>${p.department || '—'}</td>
+                                <td>${p.faculty || '—'}</td>
+                                <td>${p.level || 100}L</td>
+                                <td>Sem ${p.semester || 1}</td>
+                                <td>${p.student_count}</td>
+                                <td><span class="status-badge" style="background:#fef3c7; color:#92400e;">${p.status}</span></td>
+                                <td>
+                                    <button class="btn primary-btn" style="padding: 5px 12px; font-size: 0.8rem;" onclick="reviewCourse(${p.course_id}, '${nextStatus}', '${p.course_code}', '${p.title}')">🔍 Review Marks</button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
                 </table>
             </div>
             <div id="approval-msg" style="margin-top: 10px;"></div>
