@@ -274,28 +274,33 @@ async function fetchStudentResults() {
 window.renderStudentCourseRegistration = async function() {
     const dashboardContent = document.getElementById('dashboard-content');
     dashboardContent.innerHTML = `
-        <div class="card">
-            <h2>Course Registration</h2>
-            <p class="subtitle">Select your session, semester, and level to register pre-created courses or carryovers</p>
-            
-            <div style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1.5rem; background:#f8fafc; padding:1.2rem; border-radius:var(--radius-md); border:1px solid var(--border);">
+        <div style="background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%); color: white; padding: 1.8rem 2rem; border-radius: var(--radius-lg); margin-bottom: 1.8rem; box-shadow: var(--shadow-md); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+            <div>
+                <span style="background: rgba(99, 102, 241, 0.25); color: #a5b4fc; padding: 4px 12px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">Academic Registration</span>
+                <h2 style="margin: 0.4rem 0 0.2rem; font-size: 1.6rem; color: #ffffff;">📝 Course Registration</h2>
+                <p style="margin: 0; color: #cbd5e1; font-size: 0.9rem;">Select your session, semester, and level to register core modules and carryover courses.</p>
+            </div>
+        </div>
+
+        <div style="background: var(--surface); border: 1px solid var(--border); padding: 1.5rem; border-radius: var(--radius-lg); margin-bottom: 1.8rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+            <div style="display:flex; gap:1.2rem; flex-wrap:wrap; align-items:center;">
                 <div style="flex:1; min-width:180px;">
-                    <label style="font-weight:600; font-size:0.85rem;">Academic Session</label>
-                    <select id="reg_session_select" class="input" style="margin-bottom:0;" onchange="loadAvailableCoursesForRegistration()">
+                    <label style="font-weight:600; font-size:0.8rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; display:block; margin-bottom:0.4rem;">🗓️ Academic Session</label>
+                    <select id="reg_session_select" class="input" style="margin-bottom:0; font-weight:600;" onchange="loadAvailableCoursesForRegistration()">
                         <option value="2025/2026" selected>2025/2026 Session</option>
                         <option value="2026/2027">2026/2027 Session</option>
                     </select>
                 </div>
                 <div style="flex:1; min-width:180px;">
-                    <label style="font-weight:600; font-size:0.85rem;">Semester</label>
-                    <select id="reg_semester_select" class="input" style="margin-bottom:0;" onchange="loadAvailableCoursesForRegistration()">
+                    <label style="font-weight:600; font-size:0.8rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; display:block; margin-bottom:0.4rem;">📌 Semester</label>
+                    <select id="reg_semester_select" class="input" style="margin-bottom:0; font-weight:600;" onchange="loadAvailableCoursesForRegistration()">
                         <option value="1" selected>First Semester</option>
                         <option value="2">Second Semester</option>
                     </select>
                 </div>
                 <div style="flex:1; min-width:180px;">
-                    <label style="font-weight:600; font-size:0.85rem;">Level (Change for carryovers)</label>
-                    <select id="reg_level_select" class="input" style="margin-bottom:0;" onchange="loadAvailableCoursesForRegistration()">
+                    <label style="font-weight:600; font-size:0.8rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; display:block; margin-bottom:0.4rem;">🎓 Level (Select for Carryovers)</label>
+                    <select id="reg_level_select" class="input" style="margin-bottom:0; font-weight:600;" onchange="loadAvailableCoursesForRegistration()">
                         <option value="100">100 Level</option>
                         <option value="200">200 Level</option>
                         <option value="300">300 Level</option>
@@ -304,16 +309,19 @@ window.renderStudentCourseRegistration = async function() {
                     </select>
                 </div>
             </div>
+        </div>
 
+        <div class="card" style="margin-bottom: 2rem;">
+            <h3 style="margin-top:0; font-size:1.2rem; color:var(--primary); border-bottom:2px solid var(--border); padding-bottom:0.75rem; margin-bottom:1.2rem;">📚 Available Courses for Selection</h3>
             <div id="registration-courses-container">
-                <p>Loading available courses...</p>
+                <p style="color:var(--text-muted);">Loading available courses...</p>
             </div>
-            
-            <div style="margin-top:2.5rem;">
-                <h3 class="section-title">📋 Registered Courses for this Session</h3>
-                <div id="registered-courses-list">
-                    <p style="color:var(--text-muted);">Loading registrations...</p>
-                </div>
+        </div>
+        
+        <div class="card">
+            <h3 style="margin-top:0; font-size:1.2rem; color:var(--primary); border-bottom:2px solid var(--border); padding-bottom:0.75rem; margin-bottom:1.2rem;">📋 Official Registered Courses Summary</h3>
+            <div id="registered-courses-list">
+                <p style="color:var(--text-muted);">Loading registrations...</p>
             </div>
         </div>
     `;
@@ -330,7 +338,7 @@ window.loadAvailableCoursesForRegistration = async function() {
     const semester = document.getElementById('reg_semester_select').value;
     const level = document.getElementById('reg_level_select').value;
     
-    container.innerHTML = '<p>Loading courses...</p>';
+    container.innerHTML = '<p style="color:var(--text-muted); padding:1rem;">Loading available courses...</p>';
     
     try {
         const res = await fetch(`${API_URL}/courses/available-for-registration?session=${session}&semester=${semester}&level=${level}`, {
@@ -353,48 +361,61 @@ window.loadAvailableCoursesForRegistration = async function() {
             return;
         }
         
+        const isCarryoverLevel = parseInt(level) < parseInt(student.level);
+        
         if (!courses || courses.length === 0) {
-            container.innerHTML = `<div style="padding:1.5rem; text-align:center; color:var(--text-muted); background:#f9fafb; border-radius:8px;">No pre-created courses found for ${level}L - ${semester == 1 ? '1st' : '2nd'} Semester in ${student.department} department.</div>`;
+            container.innerHTML = `
+                <div style="padding:2.5rem 1.5rem; text-align:center; color:var(--text-muted); background:#f8fafc; border-radius:var(--radius-md); border:1px dashed var(--border);">
+                    <div style="font-size:2.5rem; margin-bottom:0.5rem;">📭</div>
+                    <p style="font-size:1.05rem; font-weight:600; margin:0 0 0.3rem; color:var(--text-main);">No Courses Found</p>
+                    <small>No pre-created courses match ${level}L - ${semester == 1 ? '1st' : '2nd'} Semester for ${student.department} department.</small>
+                </div>
+            `;
             return;
         }
         
         const regSet = new Set(registered_ids);
         
         let html = `
-            <div style="margin-bottom:1rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;">
-                <p style="margin:0; font-size:0.9rem; color:var(--text-muted);">Department: <strong>${student.department}</strong> | Selected Level: <strong>${level}L</strong></p>
-                <small style="color:var(--text-muted);">Check the courses you wish to offer and click Submit.</small>
+            <div style="margin-bottom:1.2rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.8rem; background:#f8fafc; padding:0.8rem 1.2rem; border-radius:8px; border:1px solid #e2e8f0;">
+                <div>
+                    <span style="font-size:0.85rem; color:var(--text-muted);">Department: <strong style="color:var(--text-main);">${student.department}</strong></span>
+                    <span style="margin:0 8px; color:#cbd5e1;">|</span>
+                    <span style="font-size:0.85rem; color:var(--text-muted);">Viewing Level: <strong style="color:var(--primary);">${level}L</strong></span>
+                </div>
+                ${isCarryoverLevel ? '<span style="background:#fee2e2; color:#991b1b; padding:3px 10px; border-radius:999px; font-size:0.75rem; font-weight:700;">⚠️ CARRYOVER REGISTRATION MODE</span>' : '<span style="background:#e0e7ff; color:#3730a3; padding:3px 10px; border-radius:999px; font-size:0.75rem; font-weight:700;">REGULAR LEVEL COURSES</span>'}
             </div>
+
             <div class="table-responsive">
                 <table>
                     <thead>
                         <tr>
-                            <th style="width:40px;">Select</th>
+                            <th style="width:50px; text-align:center;">Select</th>
                             <th>Course Code</th>
                             <th>Course Title</th>
-                            <th>Units</th>
+                            <th>Credit Units</th>
                             <th>Department</th>
-                            <th>Type</th>
-                            <th>Status</th>
+                            <th>Category</th>
+                            <th>Registration Status</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${courses.map(c => {
                             const isReg = regSet.has(c.id);
                             return `
-                                <tr style="${c.is_carryover ? 'background: #fff1f2;' : ''}">
-                                    <td>
-                                        <input type="checkbox" class="course-reg-checkbox" value="${c.id}" ${isReg ? 'checked disabled' : ''}>
+                                <tr style="${c.is_carryover ? 'background: #fff1f2;' : (isReg ? 'background: #f0fdf4;' : '')}">
+                                    <td style="text-align:center;">
+                                        <input type="checkbox" class="course-reg-checkbox" value="${c.id}" ${isReg ? 'checked disabled' : ''} style="transform: scale(1.25); cursor: pointer;">
                                     </td>
-                                    <td><strong>${c.course_code}</strong></td>
-                                    <td>${c.title}</td>
-                                    <td>${c.credit_units}</td>
-                                    <td>${c.department}</td>
+                                    <td><strong style="color:var(--primary); font-size:0.95rem;">${c.course_code}</strong></td>
+                                    <td style="font-weight:500;">${c.title}</td>
+                                    <td><span style="background:#f1f5f9; padding:2px 8px; border-radius:6px; font-weight:600;">${c.credit_units} Units</span></td>
+                                    <td><small style="color:var(--text-muted);">${c.department}</small></td>
                                     <td>
-                                        ${c.is_carryover ? '<span class="status-badge status-rejected">⚠️ CARRYOVER</span>' : '<span class="status-badge" style="background:#e0e7ff; color:#3730a3;">Core</span>'}
+                                        ${c.is_carryover ? '<span class="status-badge status-rejected" style="box-shadow:0 0 0 1px #fca5a5;">⚠️ CARRYOVER</span>' : '<span class="status-badge" style="background:#e0e7ff; color:#3730a3;">CORE MODULE</span>'}
                                     </td>
                                     <td>
-                                        ${isReg ? '<span class="status-badge status-approved">✅ Registered</span>' : '<span style="color:#64748b; font-size:0.85rem;">Not Registered</span>'}
+                                        ${isReg ? '<span class="status-badge status-approved">✅ REGISTERED</span>' : '<span style="color:#64748b; font-size:0.85rem; font-weight:500;">AVAILABLE</span>'}
                                     </td>
                                 </tr>
                             `;
@@ -403,9 +424,9 @@ window.loadAvailableCoursesForRegistration = async function() {
                 </table>
             </div>
             
-            <div style="margin-top:1.5rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
-                <button class="btn primary-btn" style="width:auto; padding:0.7rem 1.8rem;" onclick="submitCourseRegistration()">✅ Submit Selected Course Registration</button>
-                <p id="reg-submit-msg" class="form-feedback" style="margin:0;"></p>
+            <div style="margin-top:1.5rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; border-top:1px solid var(--border); padding-top:1.2rem;">
+                <button class="btn primary-btn" style="width:auto; padding:0.75rem 2rem; font-size:0.95rem; font-weight:700;" onclick="submitCourseRegistration()">✅ Submit Selected Course Registration</button>
+                <p id="reg-submit-msg" class="form-feedback" style="margin:0; font-size:0.9rem; font-weight:600;"></p>
             </div>
         `;
         
@@ -473,11 +494,21 @@ window.loadMyRegistrationsList = async function() {
         const registrations = await res.json();
         
         if (!registrations || registrations.length === 0) {
-            container.innerHTML = '<p style="color:var(--text-muted);">No course registrations found yet.</p>';
+            container.innerHTML = `
+                <div style="padding:1.8rem; text-align:center; color:var(--text-muted); background:#f8fafc; border-radius:8px; border:1px dashed var(--border);">
+                    <small>No course registrations recorded for your account yet.</small>
+                </div>
+            `;
             return;
         }
         
+        const totalUnits = registrations.reduce((sum, r) => sum + parseInt(r.credit_units || 0), 0);
+        
         let html = `
+            <div style="margin-bottom:1rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+                <span style="font-size:0.9rem; font-weight:600; color:var(--text-main);">Total Registered Courses: ${registrations.length}</span>
+                <span style="background:#dcfce7; color:#15803d; padding:4px 12px; border-radius:999px; font-weight:700; font-size:0.85rem;">Total Credit Units: ${totalUnits} Units</span>
+            </div>
             <div class="table-responsive">
                 <table>
                     <thead>
@@ -488,17 +519,19 @@ window.loadMyRegistrationsList = async function() {
                             <th>Course Title</th>
                             <th>Credit Units</th>
                             <th>Level</th>
+                            <th>Department</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${registrations.map(r => `
                             <tr>
-                                <td><strong>${r.session}</strong></td>
+                                <td><span style="background:#f1f5f9; padding:2px 8px; border-radius:6px; font-weight:600; font-size:0.85rem;">${r.session}</span></td>
                                 <td>${r.semester == 1 ? '1st Semester' : '2nd Semester'}</td>
-                                <td><strong>${r.course_code}</strong></td>
-                                <td>${r.title}</td>
-                                <td>${r.credit_units}</td>
+                                <td><strong style="color:var(--primary);">${r.course_code}</strong></td>
+                                <td style="font-weight:500;">${r.title}</td>
+                                <td><strong>${r.credit_units}</strong></td>
                                 <td>${r.level}L</td>
+                                <td><small style="color:var(--text-muted);">${r.department}</small></td>
                             </tr>
                         `).join('')}
                     </tbody>
